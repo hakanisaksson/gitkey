@@ -1,0 +1,86 @@
+# gitkey.cgi swedish localization
+# Copyright (C) 2013 Håkan Isaksson
+# This file is distributed under the same license as the PACKAGE package.
+# Håkan Isaksson <hakan.isaksson@init.se>, 2013.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: gitkey 1.0\n"
+"POT-Creation-Date: 2013-03-28 13:11+0100\n"
+"PO-Revision-Date: 2013-03-28 13:11+0100\n"
+"Last-Translator: Hakan Isaksson <hakan.isaksson@init.se>\n"
+"Language-Team: Swedish <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: gitkey.cgi:389
+msgid "A ssh-key can be created with 'ssh-keygen'."
+msgstr "En ssh-nyckel kan skapas med 'ssh-keygen'."
+
+#: gitkey.cgi:371
+msgid "Delete"
+msgstr "Radera"
+
+#. ($delkey)
+#: gitkey.cgi:454 gitkey.cgi:457
+#, perl-maketext-format
+msgid "Deleted key %1"
+msgstr "Raderat nyckel %1"
+
+#. ($g{AUTHORIZED_KEYS})
+#: gitkey.cgi:329
+#, perl-maketext-format
+msgid "Generated %1"
+msgstr "Genererat %1"
+
+#: gitkey.cgi:539
+msgid "Not authenticated user, access denied."
+msgstr "Ej autentiserad, åtkomst nekas."
+
+#: gitkey.cgi:401
+msgid "OBS! Only upload the public key, not the private one."
+msgstr "OBS! Det skall vara den publika nyckeln, inte den privata."
+
+#: gitkey.cgi:472
+msgid "SSH-KEY for GIT"
+msgstr "SSH-KEY för GIT"
+
+#. ($addkey)
+#: gitkey.cgi:435
+#, perl-maketext-format
+msgid "Saved as %1"
+msgstr "Sparad som %1"
+
+#: gitkey.cgi:398
+msgid "Upload"
+msgstr "Ladda upp"
+
+#: gitkey.cgi:388
+msgid "Upload a public ssh-key"
+msgstr "Lägg till en publik ssh-nyckel"
+
+#: gitkey.cgi:571
+msgid "You have no keys uploaded."
+msgstr "Du har för närvarande inte någon uppladdad nyckel."
+
+#: gitkey.cgi:378
+msgid "You have the following ssh-keys"
+msgstr "Du har följande ssh-nycklar"
+
+#: gitkey.cgi:375
+msgid "bits"
+msgstr "bitar"
+
+#: gitkey.cgi:575
+msgid "gitkey by Håkan Isaksson, 2013"
+msgstr "gitkey av Håkan Isaksson (isahn), 2013"
+
+#:
+msgid "size"
+msgstr "storlek"
+
+#: gitkey.cgi:375
+msgid "ssh-key"
+msgstr "ssh-key"

@@ -1,0 +1,6 @@
+---
+AUTHORIZED_KEYS: /git/pubkeys/authorized_keys
+KEEPDELETED: 1
+MAXKEYS: 9
+MINKEYLENGHT: 200
+SSHKEYS: /git/pubkeys
