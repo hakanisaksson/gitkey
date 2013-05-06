@@ -75,7 +75,7 @@ msgstr "bitar"
 
 #: gitkey.cgi:575
 msgid "gitkey by Håkan Isaksson, 2013"
-msgstr "gitkey av Håkan Isaksson (isahn), 2013"
+msgstr "gitkey av Håkan Isaksson, 2013"
 
 #:
 msgid "size"
