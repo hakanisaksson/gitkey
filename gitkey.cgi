@@ -65,7 +65,7 @@ use FindBin;
 use Encode;
 use Pod::Usage;
 use Getopt::Long;
-use File::Basename qw(basename);
+use File::Basename qw(basename dirname);
 use Data::Dumper;
 use CGI qw(:standard :escapeHTML -nosticky);
 use YAML::Any qw'DumpFile LoadFile';
@@ -90,11 +90,13 @@ my $YAMLFILE = $FindBin::Bin."/".basename($FindBin::Script,".cgi").".yaml";
 
 our %g = (
     SSHKEYS => "/git/pubkeys",                          ### path to store users public keys
+    DELETEDKEYS => "/git/pubkeys/.deleted",             ### path to deleted public keys
     AUTHORIZED_KEYS => "/git/pubkeys/authorized_keys",  ### path to generated keyfile containing all keys
     MINKEYLENGHT => 200,                                ### Minimum key length allowed to upload
     KEEPDELETED => 1,                                   ### Keep deleted ssh-keys (for auditing purpose)
-    MAXKEYS => 9,                                       ### Max keys one user can keep
+    MAXKEYS => 9,                                       ### Max number of keys one user can keep
     LANG => 'sv',                                       ### Localized language for Maketext
+    GITOLITE => 1,                                      ### Gitolite compatible public key storage
     );
 
 #
@@ -171,7 +173,6 @@ sub untaint {
     my $patt = shift;
     my $varname = shift;
     
-#    my $val = eval "return \$".$varname;
     return $val if ! defined $val;
     $varname = $val if ! defined $varname;
     $varname.="=$val";
@@ -295,11 +296,7 @@ sub htable {
 	$ret.= $q->start_table (\%tableopts)."\n" if $HTML;
 	$ret.= hrow( $arg->{'columns'}  ) if $columns;
 	foreach my $row (@{$data}) {
-	    #if (ref($row) eq "ARRAY") {
 		$ret.= hrow($row);
-	    #} else { ### one column only
-		#$ret.= hrow($row);
-	    #}
 	}
 	$ret.= $q->end_table."\n" if $HTML;
         $ret.= "</div>\n" if defined $class and $HTML;
@@ -311,17 +308,37 @@ sub htable {
 }
 
 #
+# Find public sskeys for user in arg1, or for all if no argument
+#
+sub find_sshkeys {
+    my $user = shift;
+    my @pubkeys;
+    $user = "*" if ! defined $user;
+    if ($g{GITOLITE}) {
+        my $cmd = "find $g{SSHKEYS}/ -name '$user.pub'";
+        debug "cmd = $cmd";
+        chomp( @pubkeys=qx( $cmd ) );
+        #print Dumper(\@pubkeys);exit;
+    } else {
+        @pubkeys=glob($g{SSHKEYS}."/$REMOTE_USER*.pub");
+    }
+    
+    return [ sort @pubkeys ];
+}
+
+#
 # Generate authorized_keys from all users stored public keys
 #
 sub generate_authorized_keys {
     debug "generate_authorized_keys";
     open(WF,">".$g{AUTHORIZED_KEYS}) or error("Can't write $g{AUTHORIZED_KEYS}: $!");
     my $numkeys=0;
-    foreach my $sshkey (glob($g{SSHKEYS}."/*.pub")) {
+    my $pubkeys = find_sshkeys();
+    foreach my $sshkey (@{ $pubkeys }) {
         open(RF, "<$sshkey") or error("Can't open $sshkey: $!");
         my $keytext = do { local $/; <RF> };
         print WF $keytext;
-        debug $sshkey;
+        debug "Added ".$sshkey;
         close(RF);
         $numkeys++;
     }
@@ -341,13 +358,17 @@ sub check_sshkey {
         my ($bits,$id,$path) = split(/\s/,$keygen);
         $keyinfo{'bits'} = untaint($bits,'([\d]+)','bits');
         $keyinfo{'id'} = untaint($id,'([\w\:]+)','id');
-        $keyinfo{'path'}= untaint($path,'([\w\/\.]+)','path');
+        $keyinfo{'path'}= untaint($path,'([\w\/\.\-]+)','path');
+        $keyinfo{'basedir'}=basename(dirname($keyinfo{'path'}));
+
     } else {
         $keyinfo{'bits'}=0;
         $keyinfo{'id'}='INVALID KEY!';
         $keyinfo{'path'}='';
     }
     $keyinfo{'basename'}=basename($sshkey);
+    $keyinfo{'keyname'}=$keyinfo{'basename'};
+    $keyinfo{'keyname'}=$keyinfo{'basedir'}."/".$keyinfo{'basename'} if ($g{GITOLITE});
     return %keyinfo;
 
 }
@@ -361,14 +382,16 @@ sub list_sshkeys {
     my $numkeys=0;
     my %table = ( -border => 1, topbgcolor => '#87cefa', );
     my @rows;
-    foreach my $sshkey (glob($g{SSHKEYS}."/$REMOTE_USER*.pub")) {
+    my $pubkeys = find_sshkeys(${REMOTE_USER});
+
+    foreach my $sshkey (@{ $pubkeys }) {
 	debug "Found sshkey = $sshkey";
         my $size = (stat($sshkey))[7]; ### size replaced by bits
 
         my %keyinfo = check_sshkey($sshkey);
 
 	push(@rows,[ $sshkey, $keyinfo{id}, $keyinfo{bits}, 
-                     "<a href=\"".$base_uri."?del=".$keyinfo{basename}."\" class=\"button\" >".__("Delete")."</a>" ]);
+                     "<a href=\"".$base_uri."?del=".$keyinfo{keyname}."\" class=\"button\" >".__("Delete")."</a>" ]);
 	$numkeys++;
     }
     $table{'data'}=\@rows;
@@ -422,6 +445,13 @@ sub add_key_submit {
     error("$m") if  substr($keytext,0,4) ne "ssh-";
 
     error("Can't write to directory ".$g{SSHKEYS}) if ! -w $g{SSHKEYS};
+    if ($g{GITOLITE}) {
+        my $dir = dirname($addkey);
+        if (! -d $dir) {
+            debug "mkdir $dir";
+            mkdir ($dir, 0775) or error("Can't create directory $dir");
+        }
+    }
     open(WF, ">$addkey") or error("Can't create $addkey");
     printf WF $keytext."\n";
     close(WF);
@@ -433,6 +463,7 @@ sub add_key_submit {
         #error("$addkey not saved, $keyinfo{id}");
     } else {
         msg f("red",__("Saved as %1",$addkey));
+        gitolite_update("Added $addkey",$addkey);
         generate_authorized_keys();
     }
 }
@@ -442,23 +473,40 @@ sub add_key_submit {
 #
 sub del_key_submit {
     my $delkey = shift;
-    my $bkey = basename($delkey);
-    $bkey = $1 if ($bkey =~ /([\w\.]+)/);
+    my $bkey;
+
+    ### Check for mischeif
+    if ($g{GITOLITE}) {
+        $bkey = $delkey;
+        $bkey = $1 if ($bkey =~ /([\w\.]+[\/]?[\w\.]+)/);
+    } else {
+        $bkey = basename($delkey);
+        $bkey = $1 if ($bkey =~ /([\w\.]+)/);
+    }
     error("Don't try it!") if $bkey ne $delkey;
     $delkey = $g{SSHKEYS}."/".$bkey;
 
     if ($g{KEEPDELETED}) {
         my $now = strftime "%Y%m%d%H%M", localtime;
-        my $deleted =  $g{SSHKEYS}."/".basename($delkey,".pub").".deleted_".$now;
+        my $deleted =  $g{DELETEDKEYS}."/".basename($delkey,".pub").".deleted_".$now;
         rename $delkey, $deleted or error "Failed to rename $delkey to $deleted";
         msg f("red",__("Deleted key %1",$delkey));
+        
+        gitolite_update("Deleted $delkey");
+        generate_authorized_keys();
     } else {
         if ( unlink $delkey ) {
             msg f("red",__("Deleted key %1",$delkey));
+            gitolite_update("Deleted $delkey");
             generate_authorized_keys();
         } else {
             error("Failed to delete $delkey: $!");
         }
+    }
+    
+    if ( $g{GITOLITE} ) {
+        my $dir = $g{SSHKEYS}."/".dirname($bkey);
+        rmdir($dir) or error("Can't rmdir $dir");
     }
 }
 
@@ -488,9 +536,57 @@ sub find_keyname {
     my $keyname = undef;
     for (my $i=0; $i< $g{MAXKEYS}; $i++) {
 	$keyname = $g{SSHKEYS}."/".$username.$i.".pub";
+        $keyname = $g{SSHKEYS}."/".$username.$i."/".$username.".pub" if ($g{GITOLITE});
 	return $keyname if ! -e $keyname;
     }
     return $keyname;
+}
+
+#
+# Exec command
+#
+sub shell {
+    my $cmd = shift;
+    my $opt = shift;
+    my %d_opt = ( verbose=>0, print=>0, test=>0, halt=>1, exitcode=>0, printonerr=>1 );
+    debug "shell: \$cmd = $cmd";
+    if (ref($opt) eq 'HASH') {
+        foreach my $key ( keys(%{$opt})) {
+            $d_opt{$key} = $opt->{$key};
+        }
+    }
+    if ($d_opt{'test'} ne 1) {
+        msg "$cmd" if $d_opt{'verbose'};
+        my $out = qx($cmd 2>&1);
+        $out =~ s/\n/$nl/ if $HTML;
+        $opt->{'exitcode'} = $? >> 8;
+        $opt->{'stdout'} = $out;
+        msg $out,"" if $d_opt{'print'};
+        msg $out,"" if $d_opt{'printonerr'} and $opt->{'exitcode'};        
+        error("$cmd FAILED!") if $d_opt{'halt'} and $opt->{'exitcode'};
+    } else {
+        msg "[TEST] $cmd" if $d_opt{'verbose'};
+        $opt->{'exitcode'} = 0;
+    }
+    return $opt->{'exitcode'};
+}
+
+#
+# Checkin changes to gitolite
+# Assumes $g{SSHKEYS} is a checked out gitolite-admin repository and that the apache user has permission to update it
+#
+sub gitolite_update {
+    my $msg = shift;
+    my $added = shift;  ### only used when adding key
+    my $cmd;
+    if ($g{GITOLITE}) {
+        $ENV{'HOME'}=(getpwuid($<))[7]; ### HOME is usually unset when running as CGI
+        chdir $g{SSHKEYS} or error("Can't change dir to $g{SSHKEYS}");
+        shell("git pull");
+        shell("git add $added") if defined $added;
+        shell("git commit -a -m \"$msg\"");
+        shell("git push");
+    }
 }
 
 #
@@ -520,6 +616,7 @@ sub parse_params {
 	
 	if ($var eq "keytext") {
 	    my $keyname=find_keyname($REMOTE_USER);
+            error("Max number of keys reached") if ! defined $keyname;
             add_key_submit ($keyname,$vars{$var});
 	    
 	}
@@ -553,7 +650,7 @@ sub load_config {
         DumpFile( $YAMLFILE, $data );
     }
     loc_lang($g{'LANG'});  ### Yes I do not want the lang detected by locale, only text directed to the users should be translated, not system messages!
-
+    $g{DELETEDKEYS}=$g{SSHKEYS} if ! defined $g{DELETEDKEYS};
 }
 #
 # Main

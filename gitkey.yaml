@@ -1,5 +1,7 @@
 ---
 AUTHORIZED_KEYS: /git/pubkeys/authorized_keys
+DELETEDKEYS: /git/pubkeys/.deleted
+GITOLITE: 1
 KEEPDELETED: 1
 MAXKEYS: 9
 MINKEYLENGHT: 200
